@@ -21,12 +21,13 @@ the command-line option `-mode`.
   [csvexport]: https://docs.influxdata.com/influxdb/v1.4/tools/shell/#specify-the-format-of-the-server-responses-with-format
 
 Note that internal workings of this project are still under development, it has
-however been battle-tested in production environments. The project has only been
-tested against the [OSS][influxdb] version of influx. The script has grown out
-of local needs and would need structuring and improvement love for a cleaner
-design. Any pull request appreciated!
+however run in production environments. The project has only been tested against
+the [OSS][influxdb] version of influx. The script has grown out of local needs
+and would need structuring and improvement love for a cleaner design. Any pull
+request appreciated! A [Docker] container is also available.
 
   [influxdb]: https://www.influxdata.com/time-series-platform/influxdb/
+  [Docker]: https://hub.docker.com/r/efrecon/influx-backup/
 
 
 ## Example Use
@@ -35,7 +36,7 @@ This section provides quick insights into how to use this project to perform
 regular backups of your Influx databases. Detailed description of the
 command-line options can be found in the next section.
 
-### Raw Backup at regular intervals
+### Raw Backup at Regular Intervals
 
 Provided that you are running a host at the name `influxdb` (Docker environments
 come to mind here), the following command would perform backup snapshots of all
@@ -44,7 +45,7 @@ databases every half an hour, into sub-directories created under
 
     backup.tcl -host influxdb -period 1800 -root /mnt/external
 
-### Regular CSV dump
+### One-Shot CSV Dump
 
 Provided the same host as above, the following command would dump only the
 dataseries which contain `example` in their name as CSV.  This backup would be
@@ -54,11 +55,12 @@ the current date and the next directory the name of the database.
     backup.tcl -mode csv -host influxdb -period -1 -root /mnt/external \
                -dst "%date%/%db%" -accept "*example*" -latest ""
 
-There will be as many CSV files as there are dataseries, and these will be
-roughly named as the series (this is the default of an option called
-`-basename`) and compressed using `gzip`.
+There will be as many CSV files as there are dataseries matching `*example*`,
+and these will be roughly named as the series and compressed using `gzip`. The
+final name of the files on disk is controlled by the default of an option called
+`-basename` and uses a default character set coming from `-charset`).
 
-### Accumulated CSV conversion
+### Accumulated CSV Conversion
 
 Provided you have a dataserie called `example` in a database called `db` that is
 updated every hour, the following command would generate an uncompressed CSV
