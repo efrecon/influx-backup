@@ -5,6 +5,10 @@ package require Tcl 8.6
 set options {
     -host      localhost
     -port      8088
+    -cliport   8086
+    -username  ""
+    -password  ""
+    -password_file ""
     -root      /backup
     -dst       "%date%"
     -format    "%Y%m%d-%H%M%S"
@@ -82,6 +86,39 @@ proc TempName { { ext "" } { size 10 } { pfx "" } { allowed "abcdefghijklmnopqrs
 }
 
 
+proc CallInflux { args } {
+    global options
+
+    set call {*}[auto_execok [dict get $options -influx]]
+    lappend call \
+        -host [dict get $options -host] \
+        -port [dict get $options -cliport]
+    if { [dict get $options -username] ne "" } {
+        lappend call -username [dict get $options -username]
+        if { [dict get $options -password] ne "" } {
+            lappend call -password [dict get $options -password]
+        } elseif { [dict get $options -password_file] } {
+            set fd [open [dict get $options -password_file]]
+            set pswd [string trim [read $fd]]
+            close $fd
+            lappend call -password $pswd
+        }
+    }
+
+    exec {*}[concat $call $args]
+} 
+
+
+proc CallInfluxD { cmd args } {
+    global options
+
+    set call {*}[auto_execok [dict get $options -influxd]]
+    lappend call $cmd -host [dict get $options -host]:[dict get $options -port]
+
+    exec {*}[concat $call $args]
+} 
+
+
 # Databases -- List of Influx databases
 #
 #      Return the list of influx databases at the host.  This is essentially a
@@ -101,9 +138,7 @@ proc Databases {} {
 
     set dbs [list]    
     puts stdout "Getting list of databases"
-    if { [catch {exec {*}[auto_execok [dict get $options -influx]] \
-                    -host [dict get $options -host] \
-                    -execute "SHOW DATABASES"} output] == 0 } {
+    if { [catch {CallInflux -execute "SHOW DATABASES"} output] == 0 } {
         # Wait until the ---- marker and then consider all databases that do not
         # start with a _ as the ones we want to backup (there is one called
         # _internal)
@@ -147,10 +182,7 @@ proc Series { db } {
 
     set series [list]    
     puts stdout "Getting data series in database '$db'"
-    if { [catch {exec {*}[auto_execok [dict get $options -influx]] \
-                    -host [dict get $options -host] \
-                    -execute "SHOW SERIES" \
-                    -database "$db" } output] == 0 } {
+    if { [catch {CallInflux -execute "SHOW SERIES" -database "$db" } output] == 0 } {
         # Wait until the ---- marker and then consider all databases that do not
         # start with a _ as the ones we want to backup (there is one called
         # _internal)
@@ -367,10 +399,8 @@ proc ::Backup { date { dbs {}} } {
             set dstdir [file join [dict get $options -root] [string map $map [dict get $options -dst]]]
             puts stdout "Backup metadata into $dstdir"
             file mkdir [file dirname $dstdir]
-            catch {exec {*}[auto_execok [dict get $options -influxd]] \
-                        backup \
-                        -host [dict get $options -host]:[dict get $options -port] \
-                        $dstdir}
+            catch {CallInfluxD backup $dstdir} out
+            puts stderr "!! $out"
             
             foreach db $dbs {
                 set map [list   "%db%" $db \
@@ -379,11 +409,8 @@ proc ::Backup { date { dbs {}} } {
                 set dstdir [file join [dict get $options -root] [string map $map [dict get $options -dst]]]
                 puts stdout "Backup database $db into $dstdir"
                 file mkdir [file dirname $dstdir]
-                catch {exec {*}[auto_execok [dict get $options -influxd]] \
-                            backup \
-                            -host [dict get $options -host]:[dict get $options -port] \
-                            -database $db \
-                            $dstdir}
+                catch {CallInfluxD backup -database $db $dstdir} out
+                puts stderr "!! $out"
             }
         }
         "csv" {
