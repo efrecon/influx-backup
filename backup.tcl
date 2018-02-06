@@ -75,6 +75,23 @@ proc CleanName { name { replace "_" } } {
 }
 
 
+# TempName -- Generate a temporary file name
+#
+#      Generate a name that can be used for the creation of temporary
+#      files, this name will be generated out of a (possibly empty)
+#      prefix, random characters and an extension.
+#
+# Arguments:
+#      ext      Extension for the file, with/out leading dot.
+#      size     Size of the random characters
+#      pfx      Prefix to lead the name
+#      allowed  Set of characters to use in the name
+#
+# Results:
+#      A good-to-use file name
+#
+# Side Effects:
+#      None.
 proc TempName { { ext "" } { size 10 } { pfx "" } { allowed "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"}} {
     set allowed [split $allowed ""]
     set name $pfx
@@ -86,6 +103,21 @@ proc TempName { { ext "" } { size 10 } { pfx "" } { allowed "abcdefghijklmnopqrs
 }
 
 
+# CallInflux -- Call influx CLI
+#
+#      Call the influx CLI, arrange to pass further relevant options
+#      from the command-line.  This will arrange to add information
+#      around host, port and authentication details, including reading
+#      the password from the file if relevant.
+#
+# Arguments:
+#      args     List of options and values to pass further to influx
+#
+# Results:
+#      Call Influx
+#
+# Side Effects:
+#      Will call influx and wait for its end before returning.
 proc CallInflux { args } {
     global options
 
@@ -109,6 +141,21 @@ proc CallInflux { args } {
 } 
 
 
+# CallInfluxD -- Call influxD
+#
+#      Call the influx daemon, arrange to pass further relevant options
+#      from the command-line.  This will arrange to add information
+#      around host and port.
+#
+# Arguments:
+#      cmd      influxd subcommand to call
+#      args     List of options and values to the command
+#
+# Results:
+#      Call influxd
+#
+# Side Effects:
+#      This will call influxd and wait for its end before returning.
 proc CallInfluxD { cmd args } {
     global options
 
@@ -225,6 +272,21 @@ proc Series { db } {
 }
 
 
+# AppendFileContent -- Append file content to source file
+#
+#      Append the content of a file to the end of a destination file,
+#      possibly skipping a number of (leading) lines.
+#
+# Arguments:
+#      dstfile  Path to destination file to append to
+#      srcfile  Path to file to append from
+#      skip     Number of lines to skip from srcfile
+#
+# Results:
+#      None.
+#
+# Side Effects:
+#      Change content of destination file
 proc AppendFileContent { dstfile srcfile { skip 0 } } {
     puts stderr "Appending content of $srcfile to $dstfile (skipping $skip first line(s))"
     set d_fd [open $dstfile "a"]
@@ -242,6 +304,19 @@ proc AppendFileContent { dstfile srcfile { skip 0 } } {
 }
 
 
+# CommonRoot -- Return common leading string
+#
+#      Compute and return the common leading string from a set
+#      of strings.
+#
+# Arguments:
+#      strings  List of strings
+#
+# Results:
+#      The common leading string of all strings, might be empty.
+#
+# Side Effects:
+#      None.
 proc CommonRoot { strings } {
     if { [llength $strings] <= 1 } {
         return [lindex $strings 0]
@@ -273,6 +348,20 @@ proc CommonRoot { strings } {
 }
 
 
+# RemoveEmptyDirs -- Remove empty directories upwards
+#
+#      Remove a directory if it is empty and continue UPWARDS the
+#      hierarchy until no empty dir is present.  This is usefull
+#      when cleaning up (empty!) file hierarchies
+#
+# Arguments:
+#      dir      Dir at which to start cleaning
+#
+# Results:
+#      None.
+#
+# Side Effects:
+#      Remove directory and parents if empty
 proc RemoveEmptyDirs { dir } {
     if { [file isdirectory $dir] } {
         set content [glob -nocomplain -directory $dir -- *]
