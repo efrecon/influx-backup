@@ -284,3 +284,9 @@ Full path to the influx [shell], relative paths will be resolved through the
 
 Full path to the `influxd` database process , relative paths will be resolved
 through the `PATH` variable. It defaults to `influxd`.
+
+## Acknowledgements
+
+The development of this script has been sponsored by
+[Lindborg Systems](http://lsys.se/) and the 
+[SCOTT](https://www.scottproject.eu/) project.
