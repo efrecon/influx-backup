@@ -82,13 +82,42 @@ account.
 ### `-host`
 
 This is the name of the host of IP running Influx, it defaults to `localhost`.
-Network connections can only occur with proper settings for [bind-address].
-
-  [bind-address]: https://docs.influxdata.com/influxdb/v1.4/administration/config/#bind-address-127-0-0-1-8088
 
 ### `-port`
 
-This is the port number at the host running Influx and defaults to `8088`.
+This is the port number at the host running the Influx daemon and defaults to
+`8088`.  Network connections can only occur with proper settings for
+[bind-address].
+
+  [bind-address]: https://docs.influxdata.com/influxdb/v1.4/administration/config/#bind-address-127-0-0-1-8088
+
+### `-cliport`
+
+This is the port number at the host for regular CLI connections, it defaults to
+`8086`.  The backup utility will use this port to list databases or dataseries.
+
+### `-username`
+
+This option specify the name of a user with administration rights within the
+system.  It defaults to an empty string as the defaults for Influx are to start
+restricting authentication as soon as users are declared.
+
+### `-password`
+
+This option specifies the password for the user with administration rights.
+Most of the time, passing the password as an argument is not convenient from a
+security standpoint: use `-password_file` instead.
+
+### `-password_file`
+
+This option specifies the path to a file containing the password for the user
+with administration rights.  This can be used with Docker [secrets].  The
+`-password` option always has precedence and the content of `-password_file`
+will only be taken into consideration when the value of `-password` is empty.
+Trailing whitespaces (including line breaks) will automatically be removed from
+the password.
+
+  [secrets]: https://docs.docker.com/engine/swarm/secrets/
 
 ### `-root`
 
