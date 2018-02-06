@@ -129,7 +129,7 @@ proc CallInflux { args } {
         lappend call -username [dict get $options -username]
         if { [dict get $options -password] ne "" } {
             lappend call -password [dict get $options -password]
-        } elseif { [dict get $options -password_file] } {
+        } elseif { [dict get $options -password_file] ne "" } {
             set fd [open [dict get $options -password_file]]
             set pswd [string trim [read $fd]]
             close $fd
