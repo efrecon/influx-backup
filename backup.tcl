@@ -93,10 +93,9 @@ proc CleanName { name { replace "_" } } {
 # Side Effects:
 #      None.
 proc TempName { { ext "" } { size 10 } { pfx "" } { allowed "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"}} {
-    set allowed [split $allowed ""]
     set name $pfx
     for {set i 0} {$i < $size} {incr i} {
-        append name [lindex $allowed [expr {int(rand()*[llength $allowed])}]]
+        append name [string index $allowed [expr {int(rand()*[string length $allowed])}]]
     }
     append name .[string trimleft $ext "."]
     return $name
@@ -288,7 +287,7 @@ proc Series { db } {
 # Side Effects:
 #      Change content of destination file
 proc AppendFileContent { dstfile srcfile { skip 0 } } {
-    puts stderr "Appending content of $srcfile to $dstfile (skipping $skip first line(s))"
+    puts stdout "Appending content of $srcfile to $dstfile (skipping $skip first line(s))"
     set d_fd [open $dstfile "a"]
     set t_fd [open $srcfile "r"]
     set l_counter 0
@@ -636,8 +635,9 @@ proc ::backup {} {
             set levels [expr {[regexp -all / $r_lnk]+0}]
             puts stdout "Linking $lnk to $dstdir for $db"
             file mkdir [file dirname $lnk]
-            # Remove existing link, if any.
-            if { [file exists $lnk] && [file type $lnk] eq "link" } {
+            # Remove existing link, if any (it is ok to fail on type since the
+            # file might not exist yet.)
+            if { [catch {file type $lnk} ftype] == 0 && $ftype eq "link" } {
                 file delete -force -- $lnk
             }
             set relative [string repeat ../ $levels][string trimleft $r_dstdir /]
@@ -662,6 +662,13 @@ proc ::backup {} {
     }
 }
 
+# Resolve -password_file into -password so callers can use temporary files.
+if { [dict get $::options -password_file] ne "" } {
+    puts stdout "Reading influx password from [dict get $::options -password_file]" 
+    set fd [open [dict get $::options -password_file]]
+    dict set ::options -password [string trim [read $fd]]
+    close $fd
+}
 after idle ::backup
 
 vwait forever
