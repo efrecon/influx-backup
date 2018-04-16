@@ -27,7 +27,7 @@ local needs and would need structuring and improvement love for a cleaner
 design. Any pull request appreciated! A [Docker] container for most versions of
 [influx][tags] is also available. The implementation is forward compatible,
 being able to detect past and future Alpine-based Influx images, as explained
-[here][hooks/README.md].
+[here](hooks/README.md).
 
   [influxdb]: https://www.influxdata.com/time-series-platform/influxdb/
   [Docker]: https://hub.docker.com/r/efrecon/influx-backup/
