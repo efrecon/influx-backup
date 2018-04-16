@@ -1,7 +1,7 @@
 ARG INFLUX_TAG=alpine
 
 FROM influxdb:${INFLUX_TAG}
-#MAINTAINER Emmanuel Frecon <efrecon@gmail.com>
+MAINTAINER Emmanuel Frecon <efrecon@gmail.com>
 
 # Add base tcl distribution and copy backup script
 RUN apk --no-cache add tcl
