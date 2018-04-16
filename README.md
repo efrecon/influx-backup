@@ -21,13 +21,17 @@ the command-line option `-mode`.
   [csvexport]: https://docs.influxdata.com/influxdb/v1.4/tools/shell/#specify-the-format-of-the-server-responses-with-format
 
 Note that internal workings of this project are still under development, it has
-however run in production environments. The project has only been tested against
-the [OSS][influxdb] version of influx. The script has grown out of local needs
-and would need structuring and improvement love for a cleaner design. Any pull
-request appreciated! A [Docker] container is also available.
+however run in production environments. The project has only been tested
+against the [OSS][influxdb] version of influx. The script has grown out of
+local needs and would need structuring and improvement love for a cleaner
+design. Any pull request appreciated! A [Docker] container for most versions of
+[influx][tags] is also available. The implementation is forward compatible,
+being able to detect past and future Alpine-based Influx images, as explained
+[here][hooks/README.md].
 
   [influxdb]: https://www.influxdata.com/time-series-platform/influxdb/
   [Docker]: https://hub.docker.com/r/efrecon/influx-backup/
+  [tags]: https://hub.docker.com/r/efrecon/influx-backup/tags/
 
 
 ## Example Use
