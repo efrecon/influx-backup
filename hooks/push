@@ -24,6 +24,7 @@ IMG=$(basename $DOCKER_REPO)
 for tag in $tags; do
     btag=$(echo "$tag" | grep "alpine" | grep -v "data" | grep -v "meta" | grep -v "rc")
     if [ -n "$btag" ]; then
-    echo "============== Pushing ${IMG}:$btag"
-    docker push ${DOCKER_REPO}:$btag
+        echo "============== Pushing ${IMG}:$btag"
+        docker push ${DOCKER_REPO}:$btag
+    fi
 done
