@@ -27,6 +27,7 @@ set options {
     -query     "select * from \"%serie%\""
     -basename  "%serie%"
     -combine   off
+    -portable  ""
 }
 
 # Quick options parser
@@ -373,6 +374,63 @@ proc RemoveEmptyDirs { dir } {
 }
 
 
+proc ::CleanUpDB { db date token } {
+    global options
+
+    # Will contain the list of directories that were removed
+    set removed [list]
+
+    # Generate a glob filter which will match all possible dates
+    set map [list "%date%" *]
+    if { $db ne "" } {
+        lappend map "%db%" $db \
+                    "%database%" $db
+    }
+    set g_filter [file join [dict get $options -root] [string map $map [dict get $options -dst]]]
+    # Collect all directories that might hold a backup using the filter above
+    set all [glob -nocomplain -type d -- $g_filter]
+    
+    # Now use the "impossible" token to extract out the date string from the
+    # path and parse it back to a timestamp, and this for all directories
+    # that we could find.
+    set map [list "%date%" $token]
+    if { $db ne "" } {
+        lappend map "%db%" $db \
+                    "%database%" $db
+    }
+    set template [file join [dict get $options -root] [string map $map [dict get $options -dst]]]
+    set timestamps [list]
+    foreach backup $all {
+        set idx [string first $token $template]
+        set dt [string range $backup $idx [expr {$idx + [string length $date] - 1}]]
+        if { [catch {clock scan $dt -format [dict get $options -format]} when] == 0 } {
+            lappend timestamps $when
+        }
+    }
+    
+    # Sort in decreasing order, i.e. latest first.
+    set timestamps [lsort -integer -decreasing $timestamps]
+    
+    # Remove old ones, keeping only -keep
+    if { [llength $timestamps] > [dict get $options -keep] } {
+        foreach then [lrange $timestamps [dict get $options -keep] end] {
+            # Convert back the timestamp to a date and remove the target.
+            set date [clock format $then -format [dict get $options -format]]
+            set map [list "%date%" $date]
+            if { $db ne "" } {
+                lappend map "%db%" $db \
+                            "%database%" $db
+            }
+            set dir [file join [dict get $options -root] [string map $map [dict get $options -dst]]]
+            puts stdout "Removing old backup from $dir"
+            file delete -force -- $dir
+            lappend removed $dir
+        }
+    }
+
+    return $removed
+}
+
 # ::CleanUp -- Get rid of old backups
 #
 #      Get rid of all old backups directories to only keep the -keep latest
@@ -398,48 +456,12 @@ proc ::CleanUp { dbs { unlikely "!"} } {
     set date [clock format $now -format [dict get $options -format]]
     set token [string repeat $unlikely [string length $date]]
     
-    foreach db $dbs {
-        # Generate a glob filter which will match all possible dates
-        set map [list   "%db%" $db \
-                        "%database%" $db \
-                        "%date%" *]
-        set g_filter [file join [dict get $options -root] [string map $map [dict get $options -dst]]]
-        # Collect all directories that might hold a backup using the filter above
-        set all [glob -nocomplain -type d -- $g_filter]
-        
-        # Now use the "impossible" token to extract out the date string from the
-        # path and parse it back to a timestamp, and this for all directories
-        # that we could find.
-        set map [list   "%db%" $db \
-                        "%database%" $db \
-                        "%date%" $token]
-        set template [file join [dict get $options -root] [string map $map [dict get $options -dst]]]
-        set timestamps [list]
-        foreach backup $all {
-            set idx [string first $token $template]
-            set dt [string range $backup $idx [expr {$idx + [string length $date] - 1}]]
-            if { [catch {clock scan $dt -format [dict get $options -format]} when] == 0 } {
-                lappend timestamps $when
-            }
+    if { [llength $dbs] } {
+        foreach db $dbs {
+            set removed [concat $removed [CleanUpDB $db $date $token]]
         }
-        
-        # Sort in decreasing order, i.e. latest first.
-        set timestamps [lsort -integer -decreasing $timestamps]
-        
-        # Remove old ones, keeping only -keep
-        if { [llength $timestamps] > [dict get $options -keep] } {
-            foreach then [lrange $timestamps [dict get $options -keep] end] {
-                # Convert back the timestamp to a date and remove the target.
-                set date [clock format $then -format [dict get $options -format]]
-                set map [list   "%db%" $db \
-                                "%database%" $db \
-                                "%date%" $date]
-                set dir [file join [dict get $options -root] [string map $map [dict get $options -dst]]]
-                puts stdout "Removing old backup from $dir"
-                file delete -force -- $dir
-                lappend removed $dir
-            }
-        }
+    } else {
+        set removed [CleanUpDB "" $date $token]
     }
 
     # Automatically remove empty directories
@@ -483,22 +505,35 @@ proc ::Backup { date { dbs {}} } {
     
     switch -- [string tolower [dict get $options -mode]] {
         "backup" {
-            set map [list   "%date%" $date]
+            set map [list "%date%" $date]
             set dstdir [file join [dict get $options -root] [string map $map [dict get $options -dst]]]
-            puts stdout "Backup metadata into $dstdir"
-            file mkdir [file dirname $dstdir]
-            catch {CallInfluxD backup $dstdir} out
-            puts stderr "!! $out"
-            
-            foreach db $dbs {
-                set map [list   "%db%" $db \
-                                "%database%" $db \
-                                "%date%" $date]
-                set dstdir [file join [dict get $options -root] [string map $map [dict get $options -dst]]]
-                puts stdout "Backup database $db into $dstdir"
+            if { [dict get $::options -portable] && [llength $dbs] == 0 } {
+                puts stdout "Backup up entire database into $dstdir"
                 file mkdir [file dirname $dstdir]
-                catch {CallInfluxD backup -database $db $dstdir} out
+                catch {CallInfluxD backup -portable $dstdir} out
                 puts stderr "!! $out"
+            } else {
+                if { ! [dict get $::options -portable] } {
+                    puts stdout "Backup metadata into $dstdir"
+                    file mkdir [file dirname $dstdir]
+                    catch {CallInfluxD backup $dstdir} out
+                    puts stderr "!! $out"
+                }
+                
+                foreach db $dbs {
+                    set map [list   "%db%" $db \
+                                    "%database%" $db \
+                                    "%date%" $date]
+                    set dstdir [file join [dict get $options -root] [string map $map [dict get $options -dst]]]
+                    puts stdout "Backup database $db into $dstdir"
+                    file mkdir [file dirname $dstdir]
+                    if { [dict get $::options -portable] } {
+                        catch {CallInfluxD backup -database $db -portable $dstdir} out
+                    } else {
+                        catch {CallInfluxD backup -database $db $dstdir} out
+                    }
+                    puts stderr "!! $out"
+                }
             }
         }
         "csv" {
@@ -582,6 +617,21 @@ proc ::Backup { date { dbs {}} } {
     }
 }
 
+proc ::HasPortable {} {
+    # Call influxd with help a try looking for a -portable flag description
+    catch {CallInfluxD backup -help} res
+    foreach line [split $res \n] {
+        set line [string trim $line]
+        if { [string index $line 0] eq "-" } {
+            if { [lindex $line 0] eq "-portable" } {
+                return 1
+            }
+        }
+    }
+    return 0
+}
+
+
 # ::backup -- Periodically perform backups
 #
 #      This will regularily create a directory for backup using the current time
@@ -610,9 +660,12 @@ proc ::backup {} {
     set date [clock format $now -format [dict get $options -format]]
     #set dstdir [file join [dict get $options -root] $date]
 
-    # Get list of databases to backup
+    # Get list of databases to backup. When using new -portable backups, we
+    # keep the list empty to trigger backups in one sweep.
     set dbs [dict get $options -databases]
-    if { [llength $dbs] == 0 } {
+    if { [llength $dbs] == 0 \
+            && (![dict get $::options -portable] \
+                || [string tolower [dict get $options -mode]] ne "backup") } {
         set dbs [Databases]
     }
     
@@ -669,6 +722,17 @@ if { [dict get $::options -password_file] ne "" } {
     dict set ::options -password [string trim [read $fd]]
     close $fd
 }
+
+# Portable backups or not?
+if { [dict get $::options -portable] eq "" } {
+    dict set ::options -portable [HasPortable]
+}
+if { [dict get $::options -portable] } {
+    puts stdout "Enabling portable backing up"
+} else {
+    puts stdout "Using legacy backing up techniques"
+}
+
 after idle ::backup
 
 vwait forever
