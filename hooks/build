@@ -8,7 +8,12 @@ else
     hub="https://hub.docker.com/r/$im/tags/"
 fi
 
-resp=$(wget -q -O - $hub)
+resp="Page Not Found"
+if [ -z "$(command -v curl)" ]; then
+    resp=$(wget -q -O - $hub)
+else
+    resp=$(curl -sL $hub)
+fi
 err=$(echo "$resp"|grep -o "Page Not Found")
 
 tags=
