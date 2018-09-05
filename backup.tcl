@@ -24,10 +24,12 @@ set options {
     -reject    {}
     -map       {}
     -link      latest
-    -query     "select * from \"%serie%\""
-    -basename  "%serie%"
+    -query     "select * from \"%measurement%\""
+    -basename  "%measurement%"
     -combine   off
     -portable  ""
+    -separator ","
+    -quote     "\""
 }
 
 # Quick options parser
@@ -38,6 +40,13 @@ foreach {opt val} $argv {
         puts stderr "$opt unknown option, should be [join [dict keys $options] ,\ ]"
         exit
     }
+}
+
+# This is as per https://golang.org/pkg/encoding/csv/ and RFC4180, as this is
+# what the InfluxDB implementation uses. 
+set builtins {
+    separator   ","
+    quote       "\""
 }
 
 # CleanName -- Restrict to set of characters
@@ -208,10 +217,10 @@ proc Databases {} {
 }
 
 
-# Series -- List of data series
+# Measurements -- List of Measurements
 #
-#      Return the list of data series in a given database at the host.  This
-#      procedure will only consider dataseries which name matches one of the
+#      Return the list of Measurements in a given database at the host.  This
+#      procedure will only consider measurements which name matches one of the
 #      glob-style patterns in the list at the global options -accept and will
 #      discard any dataserie that matches one of the patters in -reject.
 #
@@ -219,17 +228,17 @@ proc Databases {} {
 #      db       Name of database
 #
 # Results:
-#      Return the list of dataseries which names matches the list of patterns in
+#      Return the list of measurements which names matches the list of patterns in
 #      the global options -accept and -reject.
 #
 # Side Effects:
 #      None.
-proc Series { db } {
+proc Measurements { db } {
     global options
 
-    set series [list]    
-    puts stdout "Getting data series in database '$db'"
-    if { [catch {CallInflux -execute "SHOW SERIES" -database "$db" } output] == 0 } {
+    set measurements [list]    
+    puts stdout "Getting measurements in database '$db'"
+    if { [catch {CallInflux -execute "SHOW MEASUREMENTS" -database "$db" } output] == 0 } {
         # Wait until the ---- marker and then consider all databases that do not
         # start with a _ as the ones we want to backup (there is one called
         # _internal)
@@ -257,18 +266,18 @@ proc Series { db } {
                         }
                     }
 
-                    # Only return name of series that we should consider
+                    # Only return name of measurements that we should consider
                     if { $keep } {
-                        lappend series $line
+                        lappend measurements $line
                     }
                 }
             }
         }
     } else {
-        puts stderr "!! Cannot list data series: $output"
+        puts stderr "!! Cannot list measurements: $output"
     }
     
-    return $series
+    return $measurements
 }
 
 
@@ -475,6 +484,101 @@ proc ::CleanUp { dbs { unlikely "!"} } {
 }
 
 
+# Taken and adapted from http://wiki.tcl.tk/2215
+proc ::CSVSplit {line {quote "\""} {separator ","}} {
+    # Process each input character.
+    set result [list]
+    set beg 0
+    set rx [string map [list @separator@ $separator] {.*?(?=@separator@|$)}]
+    while {$beg < [string length $line]} {
+        if {[string index $line $beg] eq $quote} {
+            incr beg
+            set quote false
+            set word {} 
+            foreach char [concat [split [string range $line $beg end] {}] {{}}] {
+                # Search forward for the closing quote, one character at a time.
+                incr beg
+                if {$quote} {
+                    if {$char in [list $separator {}] } {
+                        # Quote followed by comma or end-of-line indicates the end of
+                        # the word.
+                        break
+                    } elseif {$char eq $quote} {
+                        # Pair of quotes is valid.
+                        append word $char
+                    } else {
+                        # No other characters can legally follow quote.  I think.
+                        error "extra characters after close-quote"
+                    }
+                    set quote false
+                } elseif {$char eq {}} {
+                    # End-of-line inside quotes indicates embedded newline.
+                    error "embedded newlines not supported"
+                } elseif {$char eq $quote} {
+                    # Treat the next character specially.
+                    set quote true
+                } else {
+                    # All other characters pass through directly.
+                    append word $char
+                }
+            }
+            lappend result $word
+        } else {
+            # Use all characters up to the comma or line ending.
+            regexp -start $beg $rx $line word
+            lappend result $word
+            set beg [expr {$beg + [string length $word] + 1}]
+        }
+    }
+
+    # If the line ends in a comma, add a blank word to the result.
+    if {[string index $line end] eq $separator} {
+       lappend result {}
+    }
+
+    # Done.  Return the result list.
+    return $result
+}
+
+proc ::CSVQuote { field {quote "\""} {separator ","} } {
+    set field [string map [list $quote $quote$quote] $field]
+    if { [string first $separator $field] >= 0 || [string first $quote $field] >= 0 } {
+        return $quote$field$quote
+    }
+
+    return $field
+}
+
+proc ::CSVConvert { infile tmpdir } {
+    global options builtins
+
+    # We convert only if the separator or quoting characters requested at the
+    # command-line are different from the ones that are set in stone by Influx
+    if { ( [dict get $options -separator] eq "" || [dict get $options -separator] eq [dict get $builtins separator] ) \
+            && ( [dict get $options -quote] eq "" || [dict get $options -quote] eq [dict get $builtins quote] ) } {
+        return 0
+    } else {
+        set tmpfile [file join $tmpdir [TempName ".csv"]]
+        puts stderr "CSV Converting $infile via $tmpfile"
+        set in [open $infile]
+        set out [open $tmpfile "w"]
+        while {![eof $in]} {
+            set line [gets $in]
+            set converted ""
+            foreach field [CSVSplit $line [dict get $builtins quote] [dict get $builtins separator]] {
+                append converted [CSVQuote $field [dict get $options -quote] [dict get $options -separator]] [dict get $options -separator]
+            }
+            set converted [string trimright $converted [dict get $options -separator]]
+            puts $out $converted
+        }
+        close $in
+        close $out
+        file rename -force -- $tmpfile $infile
+        return 1
+    }
+}
+
+
 # ::Backup -- Perform DB backup(s)
 #
 #      This will backup the databases which names are passed as parameters at
@@ -482,12 +586,12 @@ proc ::CleanUp { dbs { unlikely "!"} } {
 #      by the global option -mode.  When -mode is 'backup', this will be a low-
 #      level Influx backup performed using the services exposed by the influxd
 #      binary.  When -mode is 'csv', this will be a set of CSV files, one for
-#      each accepted dataseries in each database.  In this case, a directory
+#      each accepted datameasurements in each database.  In this case, a directory
 #      will be created for each database, the name of the resulting file will be
 #      cleaned up so all characters are kept within the specified -charset and
 #      sets of characters can be remapped using the list specified at -map.  The
 #      CSV backup is able to handle / and proper directory sructures will be
-#      created if necessary (out of the (transformed) data series names).  Whenever
+#      created if necessary (out of the (transformed) data measurements names).  Whenever
 #      -compress is not empty, the resulting file will be compressed using this
 #      command-line tool (typically gzip).
 #
@@ -539,15 +643,16 @@ proc ::Backup { date { dbs {}} } {
         "csv" {
             set now [clock seconds]
             foreach db $dbs {
-                foreach serie [Series $db] {
+                foreach measurement [Measurements $db] {
                     set map [list   "%db%" $db \
                                     "%database%" $db \
-                                    "%serie%" $serie \
+                                    "%measurement%" $measurement \
+                                    "%serie%" $measurement \
                                     "%date%" $date]
                     set dstdir [file join [dict get $options -root] [string map $map [dict get $options -dst]]]
 
                     # Select file for backup destination
-                    puts stdout "Backup serie $serie from database $db into $dstdir"
+                    puts stdout "Backup measurement $measurement from database $db into $dstdir"
                     set basename [string map $map [dict get $options -basename]]
                     set fname [CleanName [string map [dict get $options -map] $basename]].csv
                     set dstfile [file join $dstdir [string trimleft $fname /]]
@@ -584,6 +689,7 @@ proc ::Backup { date { dbs {}} } {
                                     -precision=rfc3339 \
                                     -format csv \
                                     > $tmpfile}
+                        CSVConvert $tmpfile $dstdir
                         if { [file exists $dstfile] && [file size $dstfile] > 0 } {
                             AppendFileContent $dstfile $tmpfile 1
                             file delete -force -- $tmpfile
@@ -599,6 +705,7 @@ proc ::Backup { date { dbs {}} } {
                                     -precision=rfc3339 \
                                     -format csv \
                                     > $dstfile}
+                        CSVConvert $dstfile $dstdir
                     }
                     if { [file exists $dstfile] } {
                         if { [dict get $options -compress] ne "" } {
