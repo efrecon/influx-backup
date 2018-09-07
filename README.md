@@ -289,6 +289,20 @@ Full path to the influx [shell], relative paths will be resolved through the
 Full path to the `influxd` database process , relative paths will be resolved
 through the `PATH` variable. It defaults to `influxd`.
 
+### `-quote`
+
+Character to be used for quoting in CSV files. Note that when this character is
+not the same as the one that is used by Influx when dumping data to CSV, CSV
+output will be converted. It defaults to `"`, which is the character used by
+Influx, and which cannot be changed as Influx complies to RFC 4180.
+
+### `-separator`
+
+Character to be used for quoting in CSV files. Note that when this character is
+not the same as the one that is used by Influx when dumping data to CSV, CSV
+output will be converted. It defaults to `,`, which is the character used by
+Influx, and which cannot be changed as Influx complies to RFC 4180.
+
 ## Acknowledgements
 
 The development of this script has been sponsored by
