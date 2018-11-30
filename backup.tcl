@@ -16,6 +16,7 @@ set options {
     -influx    influx
     -influxd   influxd
     -period    900
+    -wait      0
     -keep      3
     -mode      "backup"
     -charset   "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_,;"
@@ -48,6 +49,64 @@ set builtins {
     separator   ","
     quote       "\""
 }
+
+##### Following code from https://wiki.tcl-lang.org/page/Converting+human+time+durations
+proc HowLong {len unit} {
+    if { [string is integer -strict $len] } {
+        switch -glob -- $unit {
+            "\[Yy\]*" {
+                return [expr {$len*31536000}];   # Leap years?
+            }
+            "\[Mm\]\[Oo\]*" -
+            "m*" {
+                return [expr {$len*2592000}]
+            }
+            "\[Ww\]*" {
+                return [expr {$len*604800}]
+            }
+            "\[Dd\]*" {
+                return [expr {$len*86400}]
+            }
+            "\[Hh\]*" {
+                return [expr {$len*3600}]
+            }
+            "\[Mm\]\[Ii\]*" -
+            "M" {
+                return [expr {$len*60}]
+            }
+            "\[Ss\]*" {
+                return $len
+            }
+        }
+    }
+    return 0
+}
+
+
+proc Duration { str } {
+    set words {}
+    while {[scan $str %s%n word length] == 2} {
+        lappend words $word
+        set str [string range $str $length end]
+    }
+
+    set seconds 0
+    for {set i 0} {$i<[llength $words]} {incr i} {
+        set f [lindex $words $i]
+        if { [scan $f %d%n n length] == 2 } {
+            set unit [string range $f $length end]
+            if { $unit eq "" } {
+                incr seconds [HowLong $n [lindex $words [incr i]]]
+            } else {
+                incr seconds [HowLong $n $unit]
+            }
+        } 
+    }
+    
+    return $seconds
+}
+##### End of code from https://wiki.tcl-lang.org/page/Converting+human+time+durations
+
 
 # CleanName -- Restrict to set of characters
 #
@@ -835,7 +894,7 @@ proc ::HasPortable {} {
 #      Creates backups and necessary directories under the -root directory
 proc ::backup {} {
     global options
-    
+
     set t_start [clock milliseconds]
     
     # Generate name for directory to hold backup
@@ -906,6 +965,14 @@ if { [dict get $::options -password_file] ne "" } {
     close $fd
 }
 
+# Resolve backup period to milliseconds, we allow human-readable durations such
+# as 1w, 2 months 4d or 2y -3m. When an integer, this is in milliseconds.
+set period [dict get $::options -period]
+if {  $period ne "" && ! [string is integer -strict $period] } {
+    dict set ::options -period [Duration $period]
+    puts stdout "Converted human-readable period: '$period' to [dict get $::options -period] s."
+}
+
 # Portable backups or not?
 if { [dict get $::options -portable] eq "" } {
     dict set ::options -portable [HasPortable]
@@ -916,7 +983,32 @@ if { [dict get $::options -portable] } {
     puts stdout "Using legacy backing up techniques"
 }
 
-after idle ::backup
+# Wait can introduce a first-time delaying period, either random between two
+# values separated by a colon sign, or fixed. All these can also be expressed in
+# human-redable form, or as an integer (milliseconds)
+set wait [dict get $::options -wait]
+if { [string first ":" $wait] >= 0 } {
+    # Extract min and max and make sure to have good defaults for them
+    lassign [split $wait :] min max
+    if { $min eq "" } { set min 0 }
+    if { $max eq "" } { set max [dict get $::options -period] }
+    # Accept human-readable durations
+    if { ! [string is integer -strict $min] } {
+        set min [Duration $min]
+    }
+    if { ! [string is integer -strict $max] } {
+        set max [Duration $max]
+    }
+    set wait [expr {$min + int(rand()*($max - $min))}]
+} elseif { ![string is integer -strict $wait] } {
+    set wait [Duration $wait]
+}
+
+if { $wait > 0 } {
+    puts stdout "Waiting $wait s. before taking first backup..."
+    after [expr {1000*$wait}] ::backup
+} else {
+    after idle ::backup
+}
 
 vwait forever
-

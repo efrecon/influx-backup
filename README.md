@@ -33,7 +33,6 @@ being able to detect past and future Alpine-based Influx images, as explained
   [Docker]: https://hub.docker.com/r/efrecon/influx-backup/
   [tags]: https://hub.docker.com/r/efrecon/influx-backup/tags/
 
-
 ## Example Use
 
 This section provides quick insights into how to use this project to perform
@@ -174,7 +173,21 @@ period as the starting time for the backups, taking into account that backing up
 operations might take some time to perform. The default is `900` seconds, i.e.
 every quarter of an hour. When the period is an empty string or less than zero,
 a single backup will be generated, thus allowing this script to be placed under
-the control of a scheduling daemon such as `crond`.
+the control of a scheduling daemon such as `crond`. The period can also be
+expressed in a human-readable form, e.g. "1w", "2 months 4d" or "2y -3 m" (sans
+quotes).
+
+### `-wait`
+
+This specifies the number of seconds that the whole (regular) backup should wait
+before executing the first backup. When `-wait` contains a colon `:` sign, both
+sides of the sign will express a minimum time and maximum time and a random
+amount in between will be chosen. When the minimum is empty, it equals to `0`.
+When the maximum is empty (but there is a colon sign), it will equal to the
+value of `-period`. All values, either the number of seconds when no `:` is
+present, or the minimum and maximum, can be specified using human-readable
+periods (see `-period`).  The default waiting time is `0`, meaning that backing
+up will start at once.
 
 ### `-keep`
 
