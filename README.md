@@ -175,7 +175,7 @@ every quarter of an hour. When the period is an empty string or less than zero,
 a single backup will be generated, thus allowing this script to be placed under
 the control of a scheduling daemon such as `crond`. The period can also be
 expressed in a human-readable form, e.g. "1w", "2 months 4d" or "2y -3 m" (sans
-quotes).
+quotes). This is described in more details in the next secion.
 
 ### `-wait`
 
@@ -186,8 +186,9 @@ amount in between will be chosen. When the minimum is empty, it equals to `0`.
 When the maximum is empty (but there is a colon sign), it will equal to the
 value of `-period`. All values, either the number of seconds when no `:` is
 present, or the minimum and maximum, can be specified using human-readable
-periods (see `-period`).  The default waiting time is `0`, meaning that backing
-up will start at once.
+periods (see `-period`). The human-readable form of the period is described in
+more details in the next secion. The default waiting time is `0`, meaning that
+backing up will start at once.
 
 ### `-keep`
 
@@ -315,6 +316,15 @@ Character to be used for quoting in CSV files. Note that when this character is
 not the same as the one that is used by Influx when dumping data to CSV, CSV
 output will be converted. It defaults to `,`, which is the character used by
 Influx, and which cannot be changed as Influx complies to RFC 4180.
+
+## Human-Readable Periods
+
+A number of command-line options allow to express periods using a human-readable
+format. This format consists of integers (positive but also negative) followed
+by a specification of the unit (months, hours, etc.). The recognised units are
+`year`, `month`, `week`, `day`, `hour`, `minute`, `second` (plural or singlar).
+These can be shortened to a single letter. Some of these letters are case
+sensitive, they are respectively: `y`, `m`, `d`, `h`, `M`, `s`.
 
 ## Acknowledgements
 
