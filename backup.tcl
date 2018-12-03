@@ -736,7 +736,7 @@ proc ::Backup { date { dbs {}} } {
             set map [list "%date%" $date]
             set dstdir [file join [dict get $options -root] [string map $map [dict get $options -dst]]]
             if { [dict get $options -pending] ne "" } {
-                set tmpdir ${dstdir}[dist get $options -pending]
+                set tmpdir ${dstdir}[dict get $options -pending]
                 set bkpdir $tmpdir
             } else {
                 set bkpdir $dstdir
@@ -763,7 +763,7 @@ proc ::Backup { date { dbs {}} } {
                                     "%date%" $date]
                     set dstdir [file join [dict get $options -root] [string map $map [dict get $options -dst]]]
                     if { [dict get $options -pending] ne "" } {
-                        set tmpdir ${dstdir}[dist get $options -pending]
+                        set tmpdir ${dstdir}[dict get $options -pending]
                         set bkpdir $tmpdir
                     } else {
                         set bkpdir $dstdir
@@ -793,7 +793,7 @@ proc ::Backup { date { dbs {}} } {
                                     "%date%" $date]
                     set dstdir [file join [dict get $options -root] [string map $map [dict get $options -dst]]]
                     if { [dict get $options -pending] ne "" } {
-                        set tmpdir ${dstdir}[dist get $options -pending]
+                        set tmpdir ${dstdir}[dict get $options -pending]
                         set bkpdir $tmpdir
                     } else {
                         set bkpdir $dstdir
@@ -866,7 +866,7 @@ proc ::Backup { date { dbs {}} } {
                     } else {
                         puts stderr "!! Could not backup to $dstfile"
                     }
-                    
+
                     if { [dict get $options -pending] ne "" } {
                         file rename -force -- $bkpdir $dstdir
                     }
