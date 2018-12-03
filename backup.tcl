@@ -11,6 +11,7 @@ set options {
     -password_file ""
     -root      /backup
     -dst       "%date%"
+    -pending   ".pending"
     -format    "%Y%m%d-%H%M%S"
     -databases ""
     -influx    influx
@@ -734,11 +735,20 @@ proc ::Backup { date { dbs {}} } {
         "backup" {
             set map [list "%date%" $date]
             set dstdir [file join [dict get $options -root] [string map $map [dict get $options -dst]]]
+            if { [dict get $options -pending] ne "" } {
+                set tmpdir ${dstdir}[dist get $options -pending]
+                set bkpdir $tmpdir
+            } else {
+                set bkpdir $dstdir
+            }
             if { [dict get $::options -portable] && [llength $dbs] == 0 } {
                 puts stdout "Backup up entire database into $dstdir"
-                file mkdir [file dirname $dstdir]
-                catch {CallInfluxD backup -portable $dstdir} out
+                file mkdir [file dirname $bkpdir]
+                catch {CallInfluxD backup -portable $bkpdir} out
                 puts stderr "!! $out"
+                if { [dict get $options -pending] ne "" } {
+                    file rename -force -- $bkpdir $dstdir
+                }
             } else {
                 if { ! [dict get $::options -portable] } {
                     puts stdout "Backup metadata into $dstdir"
@@ -752,14 +762,23 @@ proc ::Backup { date { dbs {}} } {
                                     "%database%" $db \
                                     "%date%" $date]
                     set dstdir [file join [dict get $options -root] [string map $map [dict get $options -dst]]]
-                    puts stdout "Backup database $db into $dstdir"
-                    file mkdir [file dirname $dstdir]
-                    if { [dict get $::options -portable] } {
-                        catch {CallInfluxD backup -database $db -portable $dstdir} out
+                    if { [dict get $options -pending] ne "" } {
+                        set tmpdir ${dstdir}[dist get $options -pending]
+                        set bkpdir $tmpdir
                     } else {
-                        catch {CallInfluxD backup -database $db $dstdir} out
+                        set bkpdir $dstdir
+                    }
+                    puts stdout "Backup database $db into $dstdir"
+                    file mkdir [file dirname $bkpdir]
+                    if { [dict get $::options -portable] } {
+                        catch {CallInfluxD backup -database $db -portable $bkpdir} out
+                    } else {
+                        catch {CallInfluxD backup -database $db $bkpdir} out
                     }
                     puts stderr "!! $out"
+                    if { [dict get $options -pending] ne "" } {
+                        file rename -force -- $bkpdir $dstdir
+                    }
                 }
             }
         }
@@ -773,14 +792,20 @@ proc ::Backup { date { dbs {}} } {
                                     "%serie%" $measurement \
                                     "%date%" $date]
                     set dstdir [file join [dict get $options -root] [string map $map [dict get $options -dst]]]
+                    if { [dict get $options -pending] ne "" } {
+                        set tmpdir ${dstdir}[dist get $options -pending]
+                        set bkpdir $tmpdir
+                    } else {
+                        set bkpdir $dstdir
+                    }
 
                     # Select file for backup destination
                     puts stdout "Backup measurement $measurement from database $db into $dstdir"
                     set basename [string map $map [dict get $options -basename]]
                     set fname [CleanName [string map [dict get $options -map] $basename]].csv
-                    set dstfile [file join $dstdir [string trimleft $fname /]]
+                    set dstfile [file join $bkpdir [string trimleft $fname /]]
                     file mkdir [file dirname $dstfile]
-                    set tmpfile [file join $dstdir [TempName ".csv"]]
+                    set tmpfile [file join $bkpdir [TempName ".csv"]]
                     
                     # Convert special keywords in incoming query.
                     set qry [string map $map [dict get $options -query]]
@@ -840,6 +865,10 @@ proc ::Backup { date { dbs {}} } {
                         }
                     } else {
                         puts stderr "!! Could not backup to $dstfile"
+                    }
+                    
+                    if { [dict get $options -pending] ne "" } {
+                        file rename -force -- $bkpdir $dstdir
                     }
                 }
             }
