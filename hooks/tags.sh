@@ -1,6 +1,9 @@
+# Return the list of tags for the Docker image passed as a parameter. This is
+# pure POSIX shell with minimal dependencies. The code is placed in a subshell
+# (parethesis for the body of the function) to ensure that variables are not
+# leaked out.
 function tags()
 (
-    local im
     im=$1
     if [ -z "$(echo "$im" | grep -o '/')" ]; then
         hub="https://registry.hub.docker.com/v2/repositories/library/$im/tags/"
