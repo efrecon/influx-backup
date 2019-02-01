@@ -697,7 +697,9 @@ proc ::CSVConvert { infile tmpdir } {
         }
         close $in
         close $out
-        file rename -force -- $tmpfile $infile
+        if { [catch {file rename -force -- $tmpfile $infile} err] } {
+            puts stderr "!! $err"
+        }
         return 1
     }
 }
@@ -747,7 +749,10 @@ proc ::Backup { date { dbs {}} } {
                 catch {CallInfluxD backup -portable $bkpdir} out
                 puts stderr "!! $out"
                 if { [dict get $options -pending] ne "" } {
-                    file rename -force -- $bkpdir $dstdir
+                    if { [catch {file rename -force -- $bkpdir $dstdir} err] } {
+                        puts stderr "!! $err"
+                        file delete -force -- $bkpdir
+                    }
                 }
             } else {
                 if { ! [dict get $::options -portable] } {
@@ -777,7 +782,10 @@ proc ::Backup { date { dbs {}} } {
                     }
                     puts stderr "!! $out"
                     if { [dict get $options -pending] ne "" } {
-                        file rename -force -- $bkpdir $dstdir
+                        if { [catch {file rename -force -- $bkpdir $dstdir} err] } {
+                            puts stderr "!! $err"
+                            file delete -force -- $bkpdir
+                        }
                     }
                 }
             }
@@ -843,7 +851,10 @@ proc ::Backup { date { dbs {}} } {
                             file delete -force -- $tmpfile
                         } else {
                             puts stderr "Moving $tmpfile to $dstfile"
-                            file rename -force -- $tmpfile $dstfile
+                            if { [catch {file rename -force -- $tmpfile $dstfile} err] } {
+                                puts stderr "!! $err"
+                                file delete -force -- $tmpfile
+                            }
                         }
                     } else {
                         catch {exec {*}[auto_execok [dict get $options -influx]] \
@@ -868,7 +879,10 @@ proc ::Backup { date { dbs {}} } {
                     }
 
                     if { [dict get $options -pending] ne "" } {
-                        file rename -force -- $bkpdir $dstdir
+                        if { [catch {file rename -force -- $bkpdir $dstdir} err] } {
+                            puts stderr "!! $err"
+                            file delete -force -- $bkpdir
+                        }
                     }
                 }
             }
