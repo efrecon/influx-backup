@@ -1,6 +1,6 @@
 #!/bin/bash
 
-. tags.sh
+. $(dirname $0)/tags.sh
 echo "============== Figuring out all tags for influxdb"
 tags=$(tags influxdb)
 
