@@ -1043,6 +1043,9 @@ if { [dict get $::options -portable] } {
     puts stdout "Using legacy backing up techniques"
 }
 
+# Cleanup old pending backups or suggest to
+AutoClean
+
 # Wait can introduce a first-time delaying period, either random between two
 # values separated by a colon sign, or fixed. All these can also be expressed in
 # human-redable form, or as an integer (milliseconds)
