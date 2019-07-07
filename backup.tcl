@@ -12,6 +12,7 @@ set options {
     -root      /backup
     -dst       "%date%"
     -pending   ".pending"
+    -cleanup   off
     -format    "%Y%m%d-%H%M%S"
     -databases ""
     -influx    influx
@@ -45,7 +46,7 @@ foreach {opt val} $argv {
 }
 
 # This is as per https://golang.org/pkg/encoding/csv/ and RFC4180, as this is
-# what the InfluxDB implementation uses. 
+# what the InfluxDB implementation uses.
 set builtins {
     separator   ","
     quote       "\""
@@ -101,9 +102,9 @@ proc Duration { str } {
             } else {
                 incr seconds [HowLong $n $unit]
             }
-        } 
+        }
     }
-    
+
     return $seconds
 }
 ##### End of code from https://wiki.tcl-lang.org/page/Converting+human+time+durations
@@ -207,7 +208,7 @@ proc CallInflux { args } {
     }
 
     exec {*}[concat $call $args]
-} 
+}
 
 
 # CallInfluxD -- Call influxD
@@ -232,7 +233,7 @@ proc CallInfluxD { cmd args } {
     lappend call $cmd -host [dict get $options -host]:[dict get $options -port]
 
     exec {*}[concat $call $args]
-} 
+}
 
 
 # Databases -- List of Influx databases
@@ -252,7 +253,7 @@ proc CallInfluxD { cmd args } {
 proc Databases {} {
     global options
 
-    set dbs [list]    
+    set dbs [list]
     puts stdout "Getting list of databases"
     if { [catch {CallInflux -execute "SHOW DATABASES"} output] == 0 } {
         # Wait until the ---- marker and then consider all databases that do not
@@ -272,7 +273,7 @@ proc Databases {} {
     } else {
         puts stderr "!! Cannot list databases: $output"
     }
-    
+
     return $dbs
 }
 
@@ -296,7 +297,7 @@ proc Databases {} {
 proc Measurements { db } {
     global options
 
-    set measurements [list]    
+    set measurements [list]
     puts stdout "Getting measurements in database '$db'"
     if { [catch {CallInflux -execute "SHOW MEASUREMENTS" -database "$db" } output] == 0 } {
         # Wait until the ---- marker and then consider all databases that do not
@@ -336,7 +337,7 @@ proc Measurements { db } {
     } else {
         puts stderr "!! Cannot list measurements: $output"
     }
-    
+
     return $measurements
 }
 
@@ -369,7 +370,7 @@ proc AppendFileContent { dstfile srcfile { skip 0 } } {
         }
     }
     close $t_fd
-    close $d_fd    
+    close $d_fd
 }
 
 
@@ -390,16 +391,16 @@ proc CommonRoot { strings } {
     if { [llength $strings] <= 1 } {
         return [lindex $strings 0]
     }
-    
+
     foreach s $strings {
         lappend lengths [list $s [string length $s]]
     }
-    
+
     set strings [list]
     foreach pair [lsort -integer -index 1 $lengths] {
         lappend strings [lindex $pair 0]
     }
-    
+
     set common ""
     set i 0
     foreach c [split [lindex $strings 0] ""] {
@@ -412,7 +413,7 @@ proc CommonRoot { strings } {
         append common $c
         incr i
     }
-    
+
     return $common
 }
 
@@ -472,7 +473,7 @@ proc ::CleanUpDB { db date token } {
     set g_filter [file join [dict get $options -root] [string map $map [dict get $options -dst]]]
     # Collect all directories that might hold a backup using the filter above
     set all [glob -nocomplain -type d -- $g_filter]
-    
+
     # Now use the "impossible" token to extract out the date string from the
     # path and parse it back to a timestamp, and this for all directories
     # that we could find.
@@ -490,10 +491,10 @@ proc ::CleanUpDB { db date token } {
             lappend timestamps $when
         }
     }
-    
+
     # Sort in decreasing order, i.e. latest first.
     set timestamps [lsort -integer -decreasing $timestamps]
-    
+
     # Remove old ones, keeping only -keep
     if { [llength $timestamps] > [dict get $options -keep] } {
         foreach then [lrange $timestamps [dict get $options -keep] end] {
@@ -529,16 +530,16 @@ proc ::CleanUpDB { db date token } {
 #      None.
 proc ::CleanUp { dbs { unlikely "!"} } {
     global options
-    
+
     # Will contain the list of directories that were removed
     set removed [list]
-    
+
     # Generate a token that is as long as the date and is unlikely to be found
     # in a real file path...
     set now [clock seconds]
     set date [clock format $now -format [dict get $options -format]]
     set token [string repeat $unlikely [string length $date]]
-    
+
     if { [llength $dbs] } {
         foreach db $dbs {
             set removed [concat $removed [CleanUpDB $db $date $token]]
@@ -553,7 +554,7 @@ proc ::CleanUp { dbs { unlikely "!"} } {
     } else {
         RemoveEmptyDirs [file dirname [lindex $removed 0]]
     }
-    
+
     return $removed
 }
 
@@ -586,7 +587,7 @@ proc ::CSVSplit {line {quote "\""} {separator ","}} {
         if {[string index $line $beg] eq $quote} {
             incr beg
             set quote false
-            set word {} 
+            set word {}
             foreach char [concat [split [string range $line $beg end] {}] {{}}] {
                 # Search forward for the closing quote, one character at a time.
                 incr beg
@@ -704,6 +705,22 @@ proc ::CSVConvert { infile tmpdir } {
     }
 }
 
+proc ::AutoClean {} {
+    global options
+
+    if { [dict get $options -pending] ne "" } {
+        set map [list "%date%" "*"]
+        set dirptn [file join [dict get $options -root] [string map $map [dict get $options -dst]][dict get $options -pending]]
+        foreach dir [glob -nocomplain -types d -- $dirptn] {
+            if { [dict get $options -cleanup] } {
+                puts stdout "Removing old temporary directory at $dir"
+                file delete -force -- $dir
+            } else {
+                puts stderr "!! Consider manually removing temporary directory at $dir"
+            }
+        }
+    }
+}
 
 # ::Backup -- Perform DB backup(s)
 #
@@ -761,7 +778,7 @@ proc ::Backup { date { dbs {}} } {
                     catch {CallInfluxD backup $dstdir} out
                     puts stderr "!! $out"
                 }
-                
+
                 foreach db $dbs {
                     set map [list   "%db%" $db \
                                     "%database%" $db \
