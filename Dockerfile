@@ -1,7 +1,17 @@
 ARG INFLUX_TAG=alpine
 
 FROM influxdb:${INFLUX_TAG}
-MAINTAINER Emmanuel Frecon <efrecon@gmail.com>
+
+# OCI Meta information
+LABEL org.opencontainers.image.authors="efrecon@gmail.com"
+LABEL org.opencontainers.image.created=${BUILD_DATE}
+LABEL org.opencontainers.image.version="1.1"
+LABEL org.opencontainers.image.url="https://hub.docker.com/r/efrecon/influx-backup"
+LABEL org.opencontainers.image.source="https://www.github.com/efrecon/influx-backup"
+LABEL org.opencontainers.image.documentation="https://www.github.com/efrecon/influx-backup/README.md"
+LABEL org.opencontainers.image.licenses="BSD-3-Clause"
+LABEL org.opencontainers.image.title="efrecon/influx-backup"
+LABEL org.opencontainers.image.description="Periodical or one-shot raw and CSV backups of Influx databases"
 
 # Add base tcl distribution and copy backup script
 RUN apk --no-cache add tcl
