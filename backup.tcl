@@ -33,16 +33,9 @@ set options {
     -portable  ""
     -separator ","
     -quote     "\""
-}
-
-# Quick options parser
-foreach {opt val} $argv {
-    if { [dict exists $options $opt] } {
-        dict set options $opt $val
-    } else {
-        puts stderr "$opt unknown option, should be [join [dict keys $options] ,\ ]"
-        exit
-    }
+    -log       stderr
+    -verbose   INFO
+    -logtstamp "%Y%m%d-%H%M%S"
 }
 
 # This is as per https://golang.org/pkg/encoding/csv/ and RFC4180, as this is
@@ -191,10 +184,12 @@ proc TempName { { ext "" } { size 10 } { pfx "" } { allowed "abcdefghijklmnopqrs
 proc CallInflux { args } {
     global options
 
+    Log DEBUG "Calling influx with args: $args"
     set call {*}[auto_execok [dict get $options -influx]]
     lappend call \
         -host [dict get $options -host] \
         -port [dict get $options -cliport]
+    Log TRACE $call
     if { [dict get $options -username] ne "" } {
         lappend call -username [dict get $options -username]
         if { [dict get $options -password] ne "" } {
@@ -207,6 +202,7 @@ proc CallInflux { args } {
         }
     }
 
+    Log TRACE "[concat $call $args]"
     exec {*}[concat $call $args]
 }
 
@@ -229,9 +225,11 @@ proc CallInflux { args } {
 proc CallInfluxD { cmd args } {
     global options
 
+    Log DEBUG "Calling influxd with args: $args"
     set call {*}[auto_execok [dict get $options -influxd]]
     lappend call $cmd -host [dict get $options -host]:[dict get $options -port]
 
+    Log TRACE "[concat $call $args]"
     exec {*}[concat $call $args]
 }
 
@@ -254,7 +252,7 @@ proc Databases {} {
     global options
 
     set dbs [list]
-    puts stdout "Getting list of databases"
+    Log NOTICE "Getting list of databases"
     if { [catch {CallInflux -execute "SHOW DATABASES"} output] == 0 } {
         # Wait until the ---- marker and then consider all databases that do not
         # start with a _ as the ones we want to backup (there is one called
@@ -271,7 +269,7 @@ proc Databases {} {
             }
         }
     } else {
-        puts stderr "!! Cannot list databases: $output"
+        Log ERROR "Cannot list databases: $output"
     }
 
     return $dbs
@@ -298,7 +296,7 @@ proc Measurements { db } {
     global options
 
     set measurements [list]
-    puts stdout "Getting measurements in database '$db'"
+    Log INFO "Getting measurements in database '$db'"
     if { [catch {CallInflux -execute "SHOW MEASUREMENTS" -database "$db" } output] == 0 } {
         # Wait until the ---- marker and then consider all databases that do not
         # start with a _ as the ones we want to backup (there is one called
@@ -335,7 +333,7 @@ proc Measurements { db } {
             }
         }
     } else {
-        puts stderr "!! Cannot list measurements: $output"
+        Log ERROR "Cannot list measurements: $output"
     }
 
     return $measurements
@@ -358,7 +356,7 @@ proc Measurements { db } {
 # Side Effects:
 #      Change content of destination file
 proc AppendFileContent { dstfile srcfile { skip 0 } } {
-    puts stdout "Appending content of $srcfile to $dstfile (skipping $skip first line(s))"
+    Log DEBUG "Appending content of $srcfile to $dstfile (skipping $skip first line(s))"
     set d_fd [open $dstfile "a"]
     set t_fd [open $srcfile "r"]
     set l_counter 0
@@ -436,7 +434,7 @@ proc RemoveEmptyDirs { dir } {
     if { [file isdirectory $dir] } {
         set content [glob -nocomplain -directory $dir -- *]
         if { [llength $content] == 0 } {
-            puts stderr "Removing $dir"
+            Log NOTICE "Removing $dir"
             file delete -force -- $dir
             RemoveEmptyDirs [file dirname $dir]
         }
@@ -506,7 +504,7 @@ proc ::CleanUpDB { db date token } {
                             "%database%" $db
             }
             set dir [file join [dict get $options -root] [string map $map [dict get $options -dst]]]
-            puts stdout "Removing old backup from $dir"
+            Log INFO "Removing old backup from $dir"
             file delete -force -- $dir
             lappend removed $dir
         }
@@ -684,7 +682,7 @@ proc ::CSVConvert { infile tmpdir } {
         return 0
     } else {
         set tmpfile [file join $tmpdir [TempName ".csv"]]
-        puts stderr "CSV Converting $infile via $tmpfile"
+        Log DEBUG "CSV Converting $infile via $tmpfile"
         set in [open $infile]
         set out [open $tmpfile "w"]
         while {![eof $in]} {
@@ -699,7 +697,7 @@ proc ::CSVConvert { infile tmpdir } {
         close $in
         close $out
         if { [catch {file rename -force -- $tmpfile $infile} err] } {
-            puts stderr "!! $err"
+            Log ERROR "$err"
         }
         return 1
     }
@@ -713,10 +711,10 @@ proc ::AutoClean {} {
         set dirptn [file join [dict get $options -root] [string map $map [dict get $options -dst]][dict get $options -pending]]
         foreach dir [glob -nocomplain -types d -- $dirptn] {
             if { [dict get $options -cleanup] } {
-                puts stdout "Removing old temporary directory at $dir"
+                Log NOTICE "Removing old temporary directory at $dir"
                 file delete -force -- $dir
             } else {
-                puts stderr "!! Consider manually removing temporary directory at $dir"
+                Log WARN "Consider manually removing temporary directory at $dir"
             }
         }
     }
@@ -749,7 +747,7 @@ proc ::AutoClean {} {
 #      Creates backups and necessary directories under the destination directory
 proc ::Backup { date { dbs {}} } {
     global options
-    
+
     switch -- [string tolower [dict get $options -mode]] {
         "backup" {
             set map [list "%date%" $date]
@@ -761,22 +759,22 @@ proc ::Backup { date { dbs {}} } {
                 set bkpdir $dstdir
             }
             if { [dict get $::options -portable] && [llength $dbs] == 0 } {
-                puts stdout "Backup up entire database into $dstdir"
+                Log INFO "Backup up entire database into $dstdir"
                 file mkdir [file dirname $bkpdir]
                 catch {CallInfluxD backup -portable $bkpdir} out
-                puts stderr "!! $out"
+                Log ERROR "$out"
                 if { [dict get $options -pending] ne "" } {
                     if { [catch {file rename -force -- $bkpdir $dstdir} err] } {
-                        puts stderr "!! $err"
+                        Log ERROR "$err"
                         file delete -force -- $bkpdir
                     }
                 }
             } else {
                 if { ! [dict get $::options -portable] } {
-                    puts stdout "Backup metadata into $dstdir"
+                    Log INFO "Backup metadata into $dstdir"
                     file mkdir [file dirname $dstdir]
                     catch {CallInfluxD backup $dstdir} out
-                    puts stderr "!! $out"
+                    Log ERROR "$out"
                 }
 
                 foreach db $dbs {
@@ -790,17 +788,17 @@ proc ::Backup { date { dbs {}} } {
                     } else {
                         set bkpdir $dstdir
                     }
-                    puts stdout "Backup database $db into $dstdir"
+                    Log INFO "Backup database $db into $dstdir"
                     file mkdir [file dirname $bkpdir]
                     if { [dict get $::options -portable] } {
                         catch {CallInfluxD backup -database $db -portable $bkpdir} out
                     } else {
                         catch {CallInfluxD backup -database $db $bkpdir} out
                     }
-                    puts stderr "!! $out"
+                    Log ERROR "$out"
                     if { [dict get $options -pending] ne "" } {
                         if { [catch {file rename -force -- $bkpdir $dstdir} err] } {
-                            puts stderr "!! $err"
+                            Log ERROR "$err"
                             file delete -force -- $bkpdir
                         }
                     }
@@ -825,28 +823,28 @@ proc ::Backup { date { dbs {}} } {
                     }
 
                     # Select file for backup destination
-                    puts stdout "Backup measurement $measurement from database $db into $dstdir"
+                    Log INFO "Backup measurement $measurement from database $db into $dstdir"
                     set basename [string map $map [dict get $options -basename]]
                     set fname [CleanName [string map [dict get $options -map] $basename]].csv
                     set dstfile [file join $bkpdir [string trimleft $fname /]]
                     file mkdir [file dirname $dstfile]
                     set tmpfile [file join $bkpdir [TempName ".csv"]]
-                    
+
                     # Convert special keywords in incoming query.
                     set qry [string map $map [dict get $options -query]]
                     if { [catch {clock format $now -format $qry} tqry] } {
-                        puts stderr "!! Cannot convert time-data in query: $tqry"
+                        Log WARN "Cannot convert time-data in query: $tqry"
                     } else {
                         set qry $tqry
                     }
-                    
+
                     # Execute query and possibly compress destination.
                     if { [dict get $options -combine] } {
                         if { [dict get $options -compress] ne "" } {
                             set compressed [glob -nocomplain -- ${dstfile}?*]
                             if { [llength $compressed] } {
                                 if { [catch {exec {*}[auto_execok [dict get $options -compress]] -d [lindex $compressed 0]} output] } {
-                                    puts stderr "!! Could not decompress [lindex $compressed 0]: $output"
+                                    Log ERROR "Could not decompress [lindex $compressed 0]: $output"
                                 }
                             }
                         }
@@ -867,9 +865,9 @@ proc ::Backup { date { dbs {}} } {
                             AppendFileContent $dstfile $tmpfile 1
                             file delete -force -- $tmpfile
                         } else {
-                            puts stderr "Moving $tmpfile to $dstfile"
+                            Log DEBUG "Moving $tmpfile to $dstfile"
                             if { [catch {file rename -force -- $tmpfile $dstfile} err] } {
-                                puts stderr "!! $err"
+                                Log ERROR "$err"
                                 file delete -force -- $tmpfile
                             }
                         }
@@ -888,16 +886,16 @@ proc ::Backup { date { dbs {}} } {
                             if { [catch {exec {*}[auto_execok [dict get $options -compress]] $dstfile} output] == 0 } {
                                 file delete -- $dstfile
                             } else {
-                                puts stderr "!! Could not compress $dstfile: $output"
+                                Log ERROR "Could not compress $dstfile: $output"
                             }
                         }
                     } else {
-                        puts stderr "!! Could not backup to $dstfile"
+                        Log ERROR "Could not backup to $dstfile"
                     }
 
                     if { [dict get $options -pending] ne "" } {
                         if { [catch {file rename -force -- $bkpdir $dstdir} err] } {
-                            puts stderr "!! $err"
+                            Log ERROR "$err"
                             file delete -force -- $bkpdir
                         }
                     }
@@ -956,7 +954,7 @@ proc ::backup {} {
     global options
 
     set t_start [clock milliseconds]
-    
+
     # Generate name for directory to hold backup
     set now [clock seconds]
     set date [clock format $now -format [dict get $options -format]]
@@ -970,13 +968,13 @@ proc ::backup {} {
                 || [string tolower [dict get $options -mode]] ne "backup") } {
         set dbs [Databases]
     }
-    
+
     # Perform backup and clean away old backups
     Backup $date $dbs
     if { [dict get $options -keep] > 0 } {
         CleanUp $dbs
     }
-    
+
     # Keep symbolic link if requested
     if { [dict get $options -link] ne "" } {
         foreach db $dbs {
@@ -988,7 +986,7 @@ proc ::backup {} {
             set r_lnk [string map $map [dict get $options -link]]
             set lnk [file join [dict get $options -root] $r_lnk]
             set levels [expr {[regexp -all / $r_lnk]+0}]
-            puts stdout "Linking $lnk to $dstdir for $db"
+            Log INFO "Linking $lnk to $dstdir for $db"
             file mkdir [file dirname $lnk]
             # Remove existing link, if any (it is ok to fail on type since the
             # file might not exist yet.)
@@ -997,7 +995,7 @@ proc ::backup {} {
             }
             set relative [string repeat ../ $levels][string trimleft $r_dstdir /]
             if { [catch {file link -symbolic $lnk $relative} res] } {
-                puts stderr "!! Cannot link: $res"
+                Log ERROR "Cannot link: $res"
             }
         }
     }
@@ -1005,21 +1003,71 @@ proc ::backup {} {
     # Estimate elapsed milliseconds for the backup operations and take this into
     # account when scheduling next backup.  This is because backups can take a long time.
     if { [dict get $options -period] eq "" || [dict get $options -period] <= 0 } {
-        puts stdout "No more backups, period was '[dict get $options -period]'"        
+        Log NOTICE "No more backups, period was '[dict get $options -period]'"
     } else {
         set elapsed [expr {[clock milliseconds]-$t_start}]
         set next [expr {[dict get $options -period]*1000-$elapsed}]
         if { $next < 0 } {
             set next 0
         }
-        puts stdout "Next backup in [expr {int($next/1000)}] seconds"    
+        Log NOTICE "Next backup in [expr {int($next/1000)}] seconds"
         after $next ::backup
     }
 }
 
+proc ::Log { lvl msg } {
+    if { [dict get $::options -log] ne "" } {
+        set levels {ERROR WARN NOTICE INFO DEBUG TRACE}
+        if { [lsearch -nocase $levels $lvl] <= [lsearch -nocase $levels [dict get $::options -verbose]] } {
+            set lvl [string tolower $lvl]
+            if { [dict get $::options -logtstamp] ne "" } {
+                set now [clock seconds]
+                set dt [clock format $now -format [dict get $::options -logtstamp]]
+                set line "\[$dt\] "
+            } else {
+                set line ""
+            }
+            append line "\[$lvl\] $msg"
+            puts [dict get $::options -log] $line
+        }
+    }
+}
+
+# INIT #1: Set options from environment variables, if any.
+
+
+dict for { opt dft } [dict filter $options key -*] {
+    set envvar INFLUX_BACKUP_[string toupper [string trimleft $opt -]]
+    if { [info exists ::env($envvar)] } {
+        Log NOTICE "Setting option $opt to [set ::env($envvar)] (via environment)"
+        dict set options $opt [set ::env($envvar)]
+    }
+}
+
+# INIT #2: Quick options parser
+foreach {opt val} $argv {
+    if { [dict exists $options $opt] } {
+        Log NOTICE "Setting option $opt to $val (via command-line)"
+        dict set options $opt $val
+    } else {
+        Log ERROR "$opt unknown option, should be [join [dict keys [dict filter $options key -*]] ,\ ]"
+        exit 1
+    }
+}
+
+# INIT #3: Verify options
+if { ! [llength [auto_execok [dict get $options -influx]]] } {
+    Log ERROR "Cannot find influx command: [dict get $options -influx]"
+    exit 1
+}
+if { ! [llength [auto_execok [dict get $options -influxd]]] } {
+    Log ERROR "Cannot find influxd command: [dict get $options -influxd]"
+    exit 1
+}
+
 # Resolve -password_file into -password so callers can use temporary files.
 if { [dict get $::options -password_file] ne "" } {
-    puts stdout "Reading influx password from [dict get $::options -password_file]" 
+    Log INFO "Reading influx password from [dict get $::options -password_file]"
     set fd [open [dict get $::options -password_file]]
     dict set ::options -password [string trim [read $fd]]
     close $fd
@@ -1030,7 +1078,7 @@ if { [dict get $::options -password_file] ne "" } {
 set period [dict get $::options -period]
 if {  $period ne "" && ! [string is integer -strict $period] } {
     dict set ::options -period [Duration $period]
-    puts stdout "Converted human-readable period: '$period' to [dict get $::options -period] s."
+    Log INFO "Converted human-readable period: '$period' to [dict get $::options -period] s."
 }
 
 # Portable backups or not?
@@ -1038,9 +1086,9 @@ if { [dict get $::options -portable] eq "" } {
     dict set ::options -portable [HasPortable]
 }
 if { [dict get $::options -portable] } {
-    puts stdout "Enabling portable backing up"
+    Log INFO "Enabling portable backing up"
 } else {
-    puts stdout "Using legacy backing up techniques"
+    Log NOTICE "Using legacy backing up techniques"
 }
 
 # Cleanup old pending backups or suggest to
@@ -1068,7 +1116,7 @@ if { [string first ":" $wait] >= 0 } {
 }
 
 if { $wait > 0 } {
-    puts stdout "Waiting $wait s. before taking first backup..."
+    Log NOTICE "Waiting $wait s. before taking first backup..."
     after [expr {1000*$wait}] ::backup
 } else {
     after idle ::backup
