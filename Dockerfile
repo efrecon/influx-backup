@@ -14,7 +14,8 @@ LABEL org.opencontainers.image.title="efrecon/influx-backup"
 LABEL org.opencontainers.image.description="Periodical or one-shot raw and CSV backups of Influx databases"
 
 # Add base tcl distribution and copy backup script
-RUN apk --no-cache add tcl
+RUN if command -v "apk" >/dev/null 2>&1; then apk --no-cache add tcl; fi && \
+    if command -v "apt-get" >/dev/null 2>&1; then apt-get update -y && apt-get -y install tcl; fi
 COPY backup.tcl /usr/local/bin/
 
 # Export /backup volume which is the default root for backups.
