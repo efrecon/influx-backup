@@ -1,14 +1,17 @@
 #!/bin/bash
 
-. $(dirname $0)/tags.sh
-echo "============== Figuring out all tags for influxdb"
-tags=$(tags influxdb)
+# shellcheck disable=SC1090
+. "$(dirname "$0")/reg-tags/image_tags.sh"
 
-IMG=$(basename $DOCKER_REPO)
-for tag in $tags; do
-    btag=$(echo "$tag" | grep "alpine" | grep -v "data" | grep -v "meta" | grep -v "rc")
-    if [ -n "$btag" ]; then
-        echo "============== Pushing ${IMG}:$btag"
-        docker push ${DOCKER_REPO}:$btag
+for tag in $(img_tags \
+                --filter '^[0-9]+(\.[0-9]+)+(-alpine)?$' \
+                --verbose \
+                -- \
+                influxdb); do
+    if docker image inspect "${DOCKER_REPO}:$tag" >/dev/null 2>&1; then
+        echo "============== Pushing ${DOCKER_REPO}:$tag"
+        docker push "${DOCKER_REPO}:$tag"
+    else
+        echo "!!!!!!!!!!!!!! ${DOCKER_REPO}:$tag was not built, cannot push!"
     fi
 done
