@@ -19,6 +19,7 @@ set options {
     -influxd   influxd
     -period    900
     -wait      0
+    -cron      {}
     -keep      3
     -mode      "backup"
     -charset   "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_,;"
@@ -932,15 +933,15 @@ proc ::HasPortable {} {
 }
 
 
-# ::backup -- Periodically perform backups
+# ::backup -- Peform one backup
 #
-#      This will regularily create a directory for backup using the current time
-#      and perform the type of backup specified by the global option at -mode.  More
-#      details about the backup types can be found in the comment for the procedure
-#      performing the backup itself.  Once a backup has been performed, this will arrange
-#      to only keep the latest -keep backups (as long as -keep is strictly positive).
-#      Finally, a symbolic link, as specified at -link is kept updated to point at the
-#      latest backup.
+#      This will create a directory for backup using the current time and
+#      perform the type of backup specified by the global option at -mode.  More
+#      details about the backup types can be found in the comment for the
+#      procedure performing the backup itself.  Once a backup has been
+#      performed, this will arrange to only keep the latest -keep backups (as
+#      long as -keep is strictly positive). Finally, a symbolic link, as
+#      specified at -link is kept updated to point at the latest backup.
 #
 # Arguments:
 #      None.
@@ -952,8 +953,6 @@ proc ::HasPortable {} {
 #      Creates backups and necessary directories under the -root directory
 proc ::backup {} {
     global options
-
-    set t_start [clock milliseconds]
 
     # Generate name for directory to hold backup
     set now [clock seconds]
@@ -999,6 +998,119 @@ proc ::backup {} {
             }
         }
     }
+}
+
+
+# ::fieldMatch --
+#
+#	This command matches a crontab-like specification for a field
+#	to a current value.
+#
+#	A field may be an asterisk (*), which always stands for
+#	''first-last''.
+#
+#	Ranges of numbers are allowed.  Ranges are two numbers
+#	separated with a hyphen.  The specified range is inclusive.
+#	For example, 8-11 for an ''hours'' entry specifies execution
+#	at hours 8, 9, 10 and 11.
+#
+#	Lists are allowed.  A list is a set of numbers (or ranges)
+#	separated by commas.  Examples: ''1,2,5,9'', ''0-4,8-12''.
+#
+#	Step values can be used in conjunction with ranges.  Following
+#	a range with ''/<number>'' specifies skips of the number's
+#	value through the range.  For example, ''0-23/2'' can be used
+#	in the hours field to specify command execution every other
+#	hour (the alternative in the V7 standard is
+#	''0,2,4,6,8,10,12,14,16,18,20,22'').  Steps are also permitted
+#	after an asterisk, so if you want to say ''every two hours'',
+#	just use ''*/2''.
+#
+# Arguments:
+#	value	Current value of the field
+#	spec	Matching specification
+#
+# Results:
+#	returns 1 if the current value matches the specification, 0
+#	otherwise
+#
+# Side Effects:
+#	None.
+proc ::fieldMatch { value spec } {
+    if { $value != "0" } {
+        regsub "^0" $value "" value
+    }
+
+    foreach rangeorval [split $spec ","] {
+
+        # Analyse step specification
+        set idx [string first "/" $rangeorval]
+        if { $idx >= 0 } {
+            set step [string trim \
+                    [string range $rangeorval [expr $idx + 1] end]]
+            set rangeorval [string trim \
+                    [string range $rangeorval 0 [expr $idx - 1]]]
+        } else {
+            set step 1
+            set rangeorval [string trim $rangeorval]
+        }
+
+        # Analyse range specification.
+        set values ""
+        set idx [string first "-" $rangeorval]
+        if { $idx >= 0 } {
+            set minval [string trim \
+                    [string range $rangeorval 0 [expr $idx - 1]]]
+            if { $minval != "0" } {
+                regsub "^0" $minval "" minval
+            }
+            set maxval [string trim \
+                    [string range $rangeorval [expr $idx + 1] end]]
+            if { $maxval != "0" } {
+                regsub "^0" $maxval "" maxval
+            }
+            for { set i $minval } { $i <= $maxval } { incr i $step } {
+                if { $value == $i } {
+                    return 1
+                }
+            }
+        } else {
+            if { $rangeorval == "*" } {
+                if { ! [expr int(fmod($value, $step))] } {
+                    return 1
+                }
+            } else {
+                if { $rangeorval == $value } {
+                    return 1
+                }
+            }
+        }
+    }
+
+    return 0
+}
+
+
+# ::PeriodicPulse -- Periodically perform backups
+#
+#      This will regularily perform backups according to the -period option.
+#      This procedure takes care of timing operations, while backup operations
+#      themselves are handled by ::backup
+#
+# Arguments:
+#      None.
+#
+# Results:
+#      None.
+#
+# Side Effects:
+#      Creates backups and necessary directories under the -root directory
+proc ::PeriodicPulse {} {
+    global options
+
+    set t_start [clock milliseconds]
+
+    ::backup
 
     # Estimate elapsed milliseconds for the backup operations and take this into
     # account when scheduling next backup.  This is because backups can take a long time.
@@ -1011,8 +1123,40 @@ proc ::backup {} {
             set next 0
         }
         Log NOTICE "Next backup in [expr {int($next/1000)}] seconds"
-        after $next ::backup
+        after $next ::PeriodicPulse
     }
+}
+
+proc ::CronPulse {} {
+    global options
+
+    set start_ms [clock milliseconds]
+
+    # Transform current date/time into the various fields that are relevant for
+    # the cron-like date and time specification.
+    set now [expr {$start_ms / 1000}]
+    set sec [clock format $now -format "%S"];   # Really superfluous?
+    set min [clock format $now -format "%M"]
+    set hour [clock format $now -format "%H"]
+    set daymonth [clock format $now -format "%e"]
+    set month [clock format $now -format "%m"]
+    set dayweek [clock format $now -format "%w"]
+
+    lassign [dict get $::options -cron] e_min e_hour e_daymonth e_month e_dayweek
+    if { [fieldMatch $min $e_min] \
+            && [fieldMatch $hour $e_hour] \
+            && [fieldMatch $daymonth $e_daymonth] \
+            && [fieldMatch $month $e_month] \
+            && [fieldMatch $dayweek $e_dayweek] } {
+        ::backup
+    }
+
+    set elapsed [expr {[clock milliseconds]-$start_ms}]
+    set next [expr {(1000*60)-$elapsed}]
+    if { $next < 0 } {
+        set next 0
+    }
+    after $next ::CronPulse
 }
 
 proc ::Log { lvl msg } {
@@ -1115,11 +1259,24 @@ if { [string first ":" $wait] >= 0 } {
     set wait [Duration $wait]
 }
 
+# Possibly wait, then start either a periodic backup (every -period) or cron
+# backup, i.e. as specified through -cron.
 if { $wait > 0 } {
-    Log NOTICE "Waiting $wait s. before taking first backup..."
-    after [expr {1000*$wait}] ::backup
+    if { [llength [dict get $::options -cron]] == 5 } {
+        Log NOTICE "Waiting $wait s. before taking first cron backup..."
+        after [expr {1000*$wait}] ::CronPulse
+    } else {
+        Log NOTICE "Waiting $wait s. before taking first periodic backup..."
+        after [expr {1000*$wait}] ::PeriodicPulse
+    }
 } else {
-    after idle ::backup
+    if { [llength [dict get $::options -cron]] == 5 } {
+        Log NOTICE "Starting cron backup..."
+        after idle ::CronPulse
+    } else {
+        Log NOTICE "Starting periodic backup..."
+        after idle ::PeriodicPulse
+    }
 }
 
 vwait forever
