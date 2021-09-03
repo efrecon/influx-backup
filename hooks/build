@@ -1,6 +1,13 @@
 #!/bin/bash
 
 
+# Set good defaults to allow script to be run by hand. The two variables below
+# will never be used when run from within the Docker hub.
+DOCKER_REPO=${DOCKER_REPO:-"efrecon/influx-backup"}
+SOURCE_COMMIT=${SOURCE_COMMIT:-$(git log --no-decorate|grep '^commit'|head -n 1| awk '{print $2}')}
+
+im="influxdb"
+
 # shellcheck disable=SC1090
 . "$(dirname "$0")/reg-tags/image_tags.sh"
 
@@ -15,7 +22,7 @@ for tag in $(img_tags \
                 --filter '^[0-9]+(\.[0-9]+)+(-alpine)?$' \
                 --verbose \
                 -- \
-                influxdb); do
+                "$im"); do
     # Get the revision out of the org.opencontainers.image.revision label, this
     # will be the label where we store information about this repo (it cannot be
     # the tag, since we tag as the base image).

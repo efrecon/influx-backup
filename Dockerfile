@@ -3,7 +3,7 @@ ARG INFLUX_TAG=alpine
 FROM influxdb:${INFLUX_TAG}
 
 # OCI Meta information
-LABEL org.opencontainers.image.authors="efrecon@gmail.com"
+LABEL org.opencontainers.image.authors="efrecon+github@gmail.com"
 LABEL org.opencontainers.image.created=${BUILD_DATE}
 LABEL org.opencontainers.image.version="1.1"
 LABEL org.opencontainers.image.url="https://hub.docker.com/r/efrecon/influx-backup"
